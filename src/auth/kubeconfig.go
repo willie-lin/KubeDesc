@@ -2,9 +2,9 @@ package auth
 
 import (
 	authApi "KubeDesc/src/auth/api"
-	"gopkg.in/yaml.v2"
+	"KubeDesc/src/errors"
 
-	_ "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v2"
 	"k8s.io/client-go/tools/clientcmd/api"
 )
 
@@ -47,8 +47,17 @@ type kubeConfigAuthenticator struct {
 	authModes   authApi.AuthenticationModes
 }
 
-func (self *kubeConfigAuthenticator) GetAuthInfo() (*api.AuthInfo, error) {
+func (self *kubeConfigAuthenticator) GetAuthInfo() (api.AuthInfo, error) {
 	kubeConfig, err := self.parseKubeConfig(self.fileContent)
+	if err != nil {
+		return api.AuthInfo{}, err
+	}
+
+	info, err := self.getCurrentUserInfo(*kubeConfig)
+	if err != nil {
+		return api.AuthInfo{}, err
+	}
+	return self.getAuthInfo(info)
 
 }
 
@@ -68,10 +77,40 @@ func (self *kubeConfigAuthenticator) getCurrentUserInfo(config kubeConfig) (user
 		}
 	}
 	if len(userName) == 0 {
-		return userInfo{}, errors.NewInvalid
+		return userInfo{}, errors.NewInvalid("Context matching current context not found. Check if your config file is valid.")
 	}
 
 	for _, user := range config.Users {
+		if user.Name == userName {
+			return user.User, nil
+		}
+	}
+	return userInfo{}, errors.NewInvalid("User matching current context user not found. Check if your config file is valid.")
+}
 
+func (self *kubeConfigAuthenticator) getAuthInfo(info userInfo) (api.AuthInfo, error) {
+	if len(info.Token) == 0 {
+		info.Token = info.AuthProvider.Config.AccessToken
+	}
+
+	if len(info.Token) == 0 && (len(info.Password) == 0 || len(info.Username) == 0) {
+		return api.AuthInfo{}, errors.NewInvalid("Not enough data to create auth info structure.")
+	}
+	result := api.AuthInfo{}
+	if self.authModes.IsEnabled(authApi.Token) {
+		result.Token = info.Token
+	}
+
+	if self.authModes.IsEnabled(authApi.Basic) {
+		result.Username = info.Username
+		result.Password = info.Password
+	}
+	return result, nil
+}
+
+func NewKubeConfigAuthenticator(spec *authApi.LoginSpec, authModes authApi.AuthenticationModes) authApi.Authenticator {
+	return &kubeConfigAuthenticator{
+		fileContent: []byte(spec.KubeConfig),
+		authModes:   authModes,
 	}
 }
