@@ -13,12 +13,12 @@ func main() {
 	listNamespaces()
 	fmt.Println("---------------------------")
 
-
 }
 
 func listNamespaces() {
+
 	err, clientset := Config.GetClientSet()
-	fmt.Println(clientset)
+	//fmt.Println(clientset)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -33,6 +33,3 @@ func listNamespaces() {
 		fmt.Printf("[%d] %s\n", i, ns.GetName())
 	}
 }
-
-
-
